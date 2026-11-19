@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+import argparse
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+
+def run(command, cwd=None, timeout=30):
+    try:
+        return subprocess.run(command, cwd=cwd, timeout=timeout).returncode
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"Erro ao executar {command[0]}: {exc}", flush=True)
+        return 1
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Executa Norminette e testes da mini-moulinette em uma cópia temporária.")
+    parser.add_argument("projeto", nargs="?", help="Módulo, por exemplo C00 (necessário se não for detectado)")
+    parser.add_argument("--caminho", default=".", help="Pasta do módulo ou de um exercício")
+    parser.add_argument("--mini", default=os.environ.get("MINI_MOULINETTE", "~/.local/share/piscina/deps/mini-moulinette"), help="Pasta da mini-moulinette")
+    args = parser.parse_args()
+    path = Path(args.caminho).expanduser().resolve()
+    if not path.is_dir():
+        parser.error("o caminho informado não é uma pasta")
+    exercise = path.name if re.fullmatch(r"ex\d\d", path.name) else None
+    root = path.parent if exercise else path
+    project = (args.projeto or root.name).upper()
+    if not re.fullmatch(r"C(?:0\d|1[0-3])", project):
+        parser.error("informe o módulo, por exemplo: piscina-check C00")
+    mini = Path(args.mini).expanduser().resolve() / "mini-moul"
+    if not mini.is_dir() and not os.environ.get("MINI_MOULINETTE") and args.mini.startswith("~/.local/"):
+        mini = Path("~/mini-moulinette/mini-moul").expanduser()
+    tests = mini / "tests" / project
+    failed = False
+    incomplete = False
+    print(f"Projeto: {project} | Pasta: {path}", flush=True)
+    print("\n=== Norminette ===", flush=True)
+    bundled_norm = Path("~/.local/share/piscina/deps/norminette/bin/norminette").expanduser()
+    norm = str(bundled_norm) if bundled_norm.is_file() else shutil.which("norminette")
+    files = sorted(p for p in path.rglob("*") if p.is_file() and p.suffix in (".c", ".h") and ".git" not in p.parts)
+    if not norm or not files:
+        print("Não verificada: " + ("norminette não encontrada" if not norm else "nenhum arquivo C ou header encontrado"), flush=True)
+        incomplete = True
+    elif run([norm, *map(str, files)]):
+        failed = True
+    print("\n=== Testes da mini-moulinette ===", flush=True)
+    if not tests.is_dir():
+        print(f"Sem testes disponíveis em {tests}")
+        return 1 if failed else 2
+    if not shutil.which("cc"):
+        print("Compilador cc não encontrado.")
+        return 1 if failed else 2
+    targets = [exercise] if exercise else sorted({p.name for p in tests.iterdir() if p.is_dir() and re.fullmatch(r"ex\d\d", p.name)} | {p.name for p in root.iterdir() if p.is_dir() and re.fullmatch(r"ex\d\d", p.name)})
+    with tempfile.TemporaryDirectory(prefix="piscina-check-") as tmp:
+        work = Path(tmp)
+        shutil.copytree(mini, work / "mini-moul")
+        for name in targets:
+            src = root / name
+            testdir = work / "mini-moul" / "tests" / project / name
+            if not src.is_dir():
+                print(f"{name}: não entregue", flush=True)
+                incomplete = True
+                continue
+            if not testdir.is_dir() or not list(testdir.glob("*.c")):
+                print(f"{name}: sem testes disponíveis", flush=True)
+                incomplete = True
+                continue
+            shutil.copytree(src, work / name, symlinks=False)
+            for test in sorted(testdir.glob("*.c")):
+                if project == "C00" and name == "ex00" and test.name == "ft_putchar.c":
+                    # The upstream harness uses dup/close but omits their header.
+                    content = test.read_text()
+                    content = content.replace("typedef struct s_test", "#include <unistd.h>\n\ntypedef struct s_test", 1)
+                    test.write_text(content)
+                print(f"\n{name} / {test.name}:", flush=True)
+                binary = work / "test-bin"
+                if run(["cc", "-Wall", "-Wextra", "-Werror", str(test), "-o", str(binary)], cwd=work):
+                    print("Falha na compilação.", flush=True)
+                    failed = True
+                elif run([str(binary)], cwd=work):
+                    print("Teste falhou ou foi interrompido.", flush=True)
+                    failed = True
+                else:
+                    print("Teste passou.", flush=True)
+    print("\nResultado:", "falhas encontradas" if failed else "verificação incompleta" if incomplete else "verificações executadas passaram", flush=True)
+    print("Os testes locais não garantem o resultado da Moulinette oficial.")
+    return 1 if failed else 2 if incomplete else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
