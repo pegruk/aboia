@@ -42,22 +42,26 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ## Como usar
 
-Na pasta `C00` ou `C00/ex00`, execute:
+O Aboia também funciona com outros módulos de C. A mini-moulinette usada pelo projeto contém pastas de testes de **C00 a C08**, com cobertura que varia entre exercícios. A Norminette verifica arquivos C e headers; os testes funcionais dependem da disponibilidade no módulo escolhido.
+
+Quando a pasta do módulo tem o nome `C00`, `C01`, `C02` etc., entre nela ou em um exercício diretamente dentro dela e execute:
 
 ```sh
 aboia
 ```
 
-Se o nome da pasta do módulo for diferente, como `intra-uuid-...`, informe o módulo explicitamente:
+Por exemplo, dentro de `C02/ex03`, `aboia` tenta identificar o C02 e verificar o ex03. Dentro de `C01`, ele procura testes dos exercícios do C01.
+
+Se o nome da pasta do módulo for diferente, como `intra-uuid-...`, informe o módulo explicitamente. Por exemplo, para um repositório de C02:
 
 ```sh
-aboia C00
+aboia C02
 ```
 
 Também é possível indicar uma pasta sem entrar nela:
 
 ```sh
-aboia C00 --caminho /caminho/para/C00/ex00
+aboia C03 --caminho /caminho/para/C03/ex00
 ```
 
 ### Exemplo: C00/ex00
